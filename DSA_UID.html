@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meal Planner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+    <script src="https://unpkg.com/papaparse@latest/papaparse.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const MealPlannerApp = () => {
+            const [step, setStep] = useState(1);
+            const [profile, setProfile] = useState({
+                name: '',
+                age: '',
+                dietaryPreference: 'Vegan',
+                calorieRequirement: '',
+                dietaryRestrictions: ['Vegan']
+            });
+            const [mealPlan, setMealPlan] = useState(null);
+            const [mealDatabase, setMealDatabase] = useState([]);
+            const [csvFile, setCsvFile] = useState(null);
+
+            const handleFileUpload = (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    setCsvFile(file);
+                    Papa.parse(file, {
+                        header: true,
+                        dynamicTyping: true,
+                        skipEmptyLines: true,
+                        transformHeader: header => header.trim().replace(/^"|"$/g, ''),
+                        transform: (value, header) => {
+                            const cleaned = value.trim().replace(/^"|"$/g, '');
+                            const booleanMap = { "true": true, "false": false };
+                            const booleanValue = booleanMap[cleaned.toLowerCase()];
+                            return booleanValue !== undefined ? booleanValue : cleaned;
+                        },
+                        complete: (results) => {
+                            const meals = results.data
+                                .filter(row => row.food && row['Caloric Value'] && row.Protein && row.Carbohydrates)
+                                .map(row => {
+                                    let category = 'Vegetarian';
+                                    const foodName = row.food.toLowerCase();
+                                    if (['chicken', 'beef', 'pork', 'ham', 'egg'].some(term => foodName.includes(term))) {
+                                        category = 'Non-Vegetarian';
+                                    } else if (['jam', 'honey', 'peanut butter', 'apple butter', 'marmalade', 'tahini'].some(term => foodName.includes(term))) {
+                                        category = 'Vegan';
+                                    } else if (['cheese', 'pasta', 'ricotta', 'mozzarella', 'cheddar'].some(term => foodName.includes(term))) {
+                                        category = 'Vegetarian';
+                                    }
+                                    return {
+                                        name: row.food,
+                                        calories: parseFloat(row['Caloric Value']) || 0,
+                                        protein: parseFloat(row.Protein) || 0,
+                                        carbs: parseFloat(row.Carbohydrates) || 0,
+                                        category
+                                    };
+                                });
+                            setMealDatabase(meals);
+                        },
+                        error: (err) => console.error('CSV Parsing Error:', err)
+                    });
+                }
+            };
+
+            const handleInputChange = (e) => {
+                const { name, value } = e.target;
+                setProfile({ ...profile, [name]: value });
+            };
+
+            const handleRestrictionChange = (restriction) => {
+                const updatedRestrictions = profile.dietaryRestrictions.includes(restriction)
+                    ? profile.dietaryRestrictions.filter(r => r !== restriction)
+                    : [...profile.dietaryRestrictions, restriction];
+                setProfile({ ...profile, dietaryRestrictions: updatedRestrictions });
+            };
+
+            const generateMealPlan = () => {
+                const matchedMeals = mealDatabase.filter(meal => 
+                    meal.calories <= parseInt(profile.calorieRequirement) && 
+                    profile.dietaryRestrictions.includes(meal.category)
+                );
+
+                const shuffledMeals = matchedMeals.sort(() => Math.random() - 0.5);
+                
+                const breakfast = shuffledMeals.slice(0, 1);
+                const lunch = shuffledMeals.slice(1, 2);
+                const dinner = shuffledMeals.slice(2, 3);
+
+                setMealPlan({ breakfast, lunch, dinner });
+                setStep(3);
+            };
+
+            const renderStep1 = () => (
+                <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
+                    <h2 className="text-2xl font-bold mb-6 text-center">Create Your Profile</h2>
+                    <div className="mb-4">
+                        <label className="block text-gray-700 mb-2">Upload CSV File</label>
+                        <input
+                            type="file"
+                            accept=".csv"
+                            onChange={handleFileUpload}
+                            className="w-full p-2 border rounded"
+                        />
+                    </div>
+                    <div className="mb-4">
+                        <label className="block text-gray-700 mb-2">Name</label>
+                        <input
+                            type="text"
+                            name="name"
+                            value={profile.name}
+                            onChange={handleInputChange}
+                            className="w-full p-2 border rounded"
+                            placeholder="Enter your name"
+                        />
+                    </div>
+                    <div className="mb-4">
+                        <label className="block text-gray-700 mb-2">Age</label>
+                        <input
+                            type="number"
+                            name="age"
+                            value={profile.age}
+                            onChange={handleInputChange}
+                            className="w-full p-2 border rounded"
+                            placeholder="Enter your age"
+                        />
+                    </div>
+                    <div className="mb-6">
+                        <label className="block text-gray-700 mb-2">Dietary Preference</label>
+                        <select
+                            name="dietaryPreference"
+                            value={profile.dietaryPreference}
+                            onChange={handleInputChange}
+                            className="w-full p-2 border rounded"
+                        >
+                            <option value="Vegan">Vegan</option>
+                            <option value="Vegetarian">Vegetarian</option>
+                            <option value="Non-Vegetarian">Non-Vegetarian</option>
+                        </select>
+                    </div>
+                    <button
+                        onClick={() => setStep(2)}
+                        className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                        disabled={!csvFile}
+                    >
+                        Next
+                    </button>
+                </div>
+            );
+
+            const renderStep2 = () => (
+                <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
+                    <h2 className="text-2xl font-bold mb-6 text-center">Dietary Details</h2>
+                    <div className="mb-4">
+                        <label className="block text-gray-700 mb-2">Calorie Requirement</label>
+                        <input
+                            type="number"
+                            name="calorieRequirement"
+                            value={profile.calorieRequirement}
+                            onChange={handleInputChange}
+                            className="w-full p-2 border rounded"
+                            placeholder="Enter daily calories"
+                        />
+                    </div>
+                    <div className="mb-6">
+                        <label className="block text-gray-700 mb-2">Dietary Restrictions</label>
+                        <div className="flex flex-col">
+                            {['Vegan', 'Vegetarian', 'Non-Vegetarian'].map(restriction => (
+                                <label key={restriction} className="flex items-center mb-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={profile.dietaryRestrictions.includes(restriction)}
+                                        onChange={() => handleRestrictionChange(restriction)}
+                                        className="mr-2"
+                                    />
+                                    {restriction}
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="flex justify-between">
+                        <button
+                            onClick={() => setStep(1)}
+                            className="bg-gray-500 text-white p-2 rounded hover:bg-gray-600"
+                        >
+                            Back
+                        </button>
+                        <button
+                            onClick={generateMealPlan}
+                            className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                        >
+                            Generate Meal Plan
+                        </button>
+                    </div>
+                </div>
+            );
+
+            const renderStep3 = () => (
+                <div className="bg-white p-8 rounded-lg shadow-lg max-w-lg w-full">
+                    <h2 className="text-2xl font-bold mb-6 text-center">Your Meal Plan</h2>
+                    {mealPlan && (
+                        <div>
+                            <h3 className="text-xl font-semibold mb-2">Breakfast</h3>
+                            {mealPlan.breakfast.length > 0 ? mealPlan.breakfast.map(meal => (
+                                <div key={meal.name} className="mb-4 p-4 bg-gray-50 rounded">
+                                    <p><strong>{meal.name}</strong></p>
+                                    <p>Calories: {meal.calories}</p>
+                                    <p>Protein: {meal.protein}g</p>
+                                    <p>Carbs: {meal.carbs}g</p>
+                                    <p>Category: {meal.category}</p>
+                                </div>
+                            )) : <p>No suitable meal found</p>}
+                            <h3 className="text-xl font-semibold mb-2">Lunch</h3>
+                            {mealPlan.lunch.length > 0 ? mealPlan.lunch.map(meal => (
+                                <div key={meal.name} className="mb-4 p-4 bg-gray-50 rounded">
+                                    <p><strong>{meal.name}</strong></p>
+                                    <p>Calories: {meal.calories}</p>
+                                    <p>Protein: {meal.protein}g</p>
+                                    <p>Carbs: {meal.carbs}g</p>
+                                    <p>Category: {meal.category}</p>
+                                </div>
+                            )) : <p>No suitable meal found</p>}
+                            <h3 className="text-xl font-semibold mb-2">Dinner</h3>
+                            {mealPlan.dinner.length > 0 ? mealPlan.dinner.map(meal => (
+                                <div key={meal.name} className="mb-4 p-4 bg-gray-50 rounded">
+                                    <p><strong>{meal.name}</strong></p>
+                                    <p>Calories: {meal.calories}</p>
+                                    <p>Protein: {meal.protein}g</p>
+                                    <p>Carbs: {meal.carbs}g</p>
+                                    <p>Category: {meal.category}</p>
+                                </div>
+                            )) : <p>No suitable meal found</p>}
+                        </div>
+                    )}
+                    <button
+                        onClick={() => { setStep(1); setMealPlan(null); }}
+                        className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 mt-4"
+                    >
+                        Create New Plan
+                    </button>
+                </div>
+            );
+
+            return (
+                <div className="flex items-center justify-center min-h-screen">
+                    {step === 1 && renderStep1()}
+                    {step === 2 && renderStep2()}
+                    {step === 3 && renderStep3()}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<MealPlannerApp />);
+    </script>
+</body>
+</html>
